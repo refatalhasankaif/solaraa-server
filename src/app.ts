@@ -12,7 +12,7 @@ const app: Application = express();
 // app.use(cors({
 //     origin: [
 //         envVariables.FRONTEND_URL, 
-//         // envVariables.BETTER_AUTH_URL
+//         envVariables.BETTER_AUTH_URL
 //     ],
 //     credentials: true,
 //     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],

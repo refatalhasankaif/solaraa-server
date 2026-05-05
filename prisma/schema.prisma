@@ -4,10 +4,344 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// Better Auth Models
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+  
+  sessions      Session[]
+  accounts      Account[]
+  
+  profile       UserProfile?
+  privacy       UserPrivacy?
+  preferences   UserNotificationPreference?
+  subscriptions PushSubscription[]
+  
+  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
+  
+  friendshipsA Friendship[] @relation("UserAFriendships")
+  friendshipsB Friendship[] @relation("UserBFriendships")
+  
+  blockedUsers   BlockedUser[] @relation("Blocker")
+  blockedBy      BlockedUser[] @relation("Blocked")
+  
+  notificationsReceived Notification[] @relation("Recipient")
+  notificationsSent     Notification[] @relation("Actor")
+  
+  callParticipants CallParticipant[]
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+}
+
+// Profile and Preferences
+model UserProfile {
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username           String              @unique
+  fullName           String?
+  avatarUrl          String?
+  bio                String?
+  birthDate          DateTime?
+  hometown           String?
+  currentCity        String?
+  relationshipStatus RelationshipStatus?
+  pronouns           String?
+  gender             String?
+  
+  education Education[]
+  work      Work[]
+  hobbies   UserHobby[]
+  languages UserLanguage[]
+  
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+model UserPrivacy {
+  id              String            @id @default(uuid())
+  userId          String            @unique
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile         PrivacyVisibility @default(PUBLIC)
+  onlineStatus    PrivacyVisibility @default(PUBLIC)
+  lastSeen        PrivacyVisibility @default(PUBLIC)
+  friendList      PrivacyVisibility @default(PUBLIC)
+  followList      PrivacyVisibility @default(PUBLIC)
+  activityVisible Boolean           @default(true)
+}
+
+model UserNotificationPreference {
+  id               String  @id @default(uuid())
+  userId           String  @unique
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  friendRequests   Boolean @default(true)
+  messages         Boolean @default(true)
+  mentions         Boolean @default(true)
+  storyReactions   Boolean @default(true)
+  calls            Boolean @default(true)
+  marketingEmails  Boolean @default(false)
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+// Social Relationships
+model FriendRequest {
+  id         String              @id @default(uuid())
+  senderId   String
+  receiverId String
+  status     FriendRequestStatus @default(PENDING)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userAId   String
+  userBId   String
+  createdAt DateTime @default(now())
+
+  userA User @relation("UserAFriendships", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("UserBFriendships", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model BlockedUser {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+// Notifications and Communications
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  actorId     String?
+  entityId    String?
+  type        NotificationType
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("Recipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId])
+  @@index([isRead])
+}
+
+model CallHistory {
+  id        String      @id @default(uuid())
+  type      CallType
+  status    CallStatus
+  startTime DateTime    @default(now())
+  endTime   DateTime?
+  duration  Int?        // in seconds
+  
+  participants CallParticipant[]
+}
+
+model CallParticipant {
+  id        String      @id @default(uuid())
+  callId    String
+  userId    String
+  joinedAt  DateTime    @default(now())
+  leftAt    DateTime?
+
+  call CallHistory @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@index([userId])
+}
+
+// Profile Details
+model Education {
+  id            String        @id @default(uuid())
+  userProfileId String
+  institution   String
+  degree        String?
+  field         String?
+  type          EducationType
+  startDate     DateTime?
+  endDate       DateTime?
+  
+  profile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+
+  @@index([userProfileId])
+}
+
+model Work {
+  id            String    @id @default(uuid())
+  userProfileId String
+  company       String
+  position      String
+  description   String?
+  startDate     DateTime?
+  endDate       DateTime?
+  isCurrent     Boolean   @default(false)
+  
+  profile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+
+  @@index([userProfileId])
+}
+
+model Hobby {
+  id    String      @id @default(uuid())
+  name  String      @unique
+  users UserHobby[]
+}
+
+model UserHobby {
+  userProfileId String
+  hobbyId       String
+  
+  profile UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  hobby   Hobby       @relation(fields: [hobbyId], references: [id], onDelete: Cascade)
+
+  @@id([userProfileId, hobbyId])
+}
+
+model Language {
+  id    String         @id @default(uuid())
+  name  String         @unique
+  code  String         @unique
+  users UserLanguage[]
+}
+
+model UserLanguage {
+  userProfileId String
+  languageId    String
+  proficiency   String?
+  
+  profile  UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  language Language    @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@id([userProfileId, languageId])
+}
+
+// Enums
+enum RelationshipStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  ENGAGED
+  OTHERS
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
+  REQUESTED
+}
+
+enum NotificationType {
+  FRIEND_REQ
+  MESSAGE
+  STORY_VIEW
+  STORY_REAC
+  CALL
+}
+
+enum PrivacyVisibility {
+  PUBLIC
+  FRIENDS
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  MISSED
+  REJECTED
+  COMPLETED
+}
+
+enum EducationType {
+  PRIMARY
+  HIGH_SCHOOL
+  INSTITUTE
+  COLLEGE
+  UNIVERSITY
+  OTHERS
+}
+
+enum ContactType {
+  EMAIL
+  PHONE
+  TELEPHONE
 }
